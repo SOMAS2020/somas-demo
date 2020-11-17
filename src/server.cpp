@@ -6,7 +6,7 @@
 // get_clients gets a mapping from the port string to the `clients/<teamname>_<portnum>`
 // representation of the client.
 // Health checks like port number >=1024 and repeat port numbers are run.
-void get_clients(std::vector<Client> &clients)
+void get_clients(std::vector<Client *> &clients)
 {
     if (!std::filesystem::exists("clients"))
     {
@@ -30,97 +30,126 @@ void get_clients(std::vector<Client> &clients)
 
             try
             {
-                Client c(path);
-                auto port = c.get_port();
+                Client *c = new Client(path);
+                auto port = c->get_port();
                 if (used_ports.count(port))
                 {
-                    std::cerr << "Error for '" << c << "': port number '"
+                    std::stringstream ss;
+                    ss << "Error for '" << c << "': port number '"
                               << port << "' already used" << std::endl;
-                    std::exit(EXIT_FAILURE);
+                    throw ss.str();
                 }
                 used_ports.insert(port);
                 clients.push_back(c);
             }
-            catch (std::exception &e)
+            catch (std::string &e)
             {
-                std::cerr << "Failed to create client for path: '" << path << "': " << e.what();
+                std::stringstream ss;
+                ss << "Failed to create client for path: '" << path << "': " << e;
+                throw ss.str();
             }
         }
 }
 
 // build_clients runs the build.sh scripts of the client.
-void build_clients(const std::vector<Client> &clients)
+void build_clients(const std::vector<Client *> &clients)
 {
     for (const auto &x : clients)
     {
         try
         {
-            x.build();
+            x->build();
         }
-        catch (std::exception &e)
+        catch (std::string &e)
         {
-            std::cerr << "Can't build '" << x << "': " << e.what() << std::endl;
-            exit(EXIT_FAILURE);
+            std::stringstream ss;
+            ss << "Can't build '" << *x << "': " << e << std::endl;
+            throw ss.str();
         }
     }
 }
 
 // run_clients kills all processes on the port then runs the run.sh scripts
 // of the clients.
-void run_clients(const std::vector<Client> &clients)
+void run_clients(const std::vector<Client *> &clients)
 {
     for (const auto &x : clients)
     {
         try
         {
-            x.run();
+            x->run();
         }
-        catch (std::exception &e)
-        {
-            std::cerr << "Can't run '" << x << "': " << e.what() << std::endl;
-            exit(EXIT_FAILURE);
+        catch (std::string &e)
+        {   
+            std::stringstream ss;
+            ss << "Can't run '" << *x << "': " << e << std::endl;
+            throw ss.str();
         }
     }
 }
 
-void send_first_hello(const std::vector<Client> &clients)
+void send_first_hello(const std::vector<Client *> &clients)
 {
     for (const auto &x : clients)
     {
-        std::cerr << "Trying to send first hello to '" << x << "'" << std::endl;
+        std::cerr << "Trying to send first hello to '" << *x << "'" << std::endl;
 
         // try to see if we can get back the port
-        const auto port = x.get_port();
-        auto got = x.request(port);
+        const auto port = x->get_port();
+        auto got = x->request(port);
 
-        if (got != port) 
+        if (got != port)
         {
-            std::cerr << "got != want: " << got << " != " << port << std::endl;
-            exit(EXIT_FAILURE);
+            std::stringstream ss;
+            ss << "got != want: " << got << " != " << port << std::endl;
+            throw ss.str();
         }
-        std::cerr << x << " OK! " << std::endl;
+        std::cerr << *x << " OK! " << std::endl;
     }
 }
 
+void teardown(const std::vector<Client *> clients) {
+    for (const auto &x : clients)
+    {
+        x->~Client();
+    }
+}
 
 int main(int argc, char *argv[])
 {
-    // maps from port string to directory containing client
-    std::vector<Client> clients;
-    get_clients(clients);
-    if (DEBUG_LEVEL >= 1)
-    {
+    std::vector<Client *> clients;
+    try {
+        get_clients(clients);
         std::cerr << "Got clients: " << std::endl;
         for (const auto &x : clients)
-            std::cerr << "\t" << x << std::endl;
+            std::cerr << "\t" << *x << std::endl;
+
+        std::cerr << "Building clients!" << std::endl;
+        build_clients(clients);
+        std::cerr << "Finished starting clients!" << std::endl;
+        std::cerr << "Starting clients!" << std::endl;
+        run_clients(clients);
+        std::cerr << "Finished starting clients!" << std::endl;
+        std::cerr << "Sending first requests!" << std::endl;
+        send_first_hello(clients);
+        std::cerr << "Finished requests!" << std::endl;
+    } 
+    catch (std::string& e)
+    {
+        teardown(clients);
+        std::cerr << e << std::endl;
+        return EXIT_FAILURE;
     }
-    std::cerr << "Building clients!" << std::endl;
-    build_clients(clients);
-    std::cerr << "Finished starting clients!" << std::endl;
-    std::cerr << "Starting clients!" << std::endl;
-    run_clients(clients);
-    std::cerr << "Finished starting clients!" << std::endl;
-    std::cerr << "Sending first requests!" << std::endl;
-    send_first_hello(clients);
-    std::cerr << "Finished requests!" << std::endl;
+    catch (std::exception& e)
+    {
+        teardown(clients);
+        std::cerr << e.what() << std::endl;
+        return EXIT_FAILURE;
+    }
+    catch (...)
+    {
+        teardown(clients);
+        std::cerr << "Unknown exception occurred" << std::endl;
+        return EXIT_FAILURE;
+    }
 }

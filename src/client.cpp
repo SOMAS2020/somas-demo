@@ -25,9 +25,9 @@ Client::~Client()
     {
         kill_processes_on_tcp_port(port);
     }
-    catch (std::exception &e)
+    catch (std::string &e)
     {
-        std::cerr << "Failed to kill client '" << this << "' on port '" << port << "': " <<  e.what();
+        std::cerr << "Failed to kill client '" << *this << "' on port '" << port << "': " << e;
     }
 }
 
@@ -38,19 +38,11 @@ void Client::build() const
 {
     const auto build_cmd = path + "/build.sh";
     std::cerr << "START Building: " << build_cmd << std::endl;
-    auto pipe = popen(build_cmd.c_str(), "r");
-    if (!pipe)
-    {
-        std::stringstream ss;
-        ss << "Can't start build script '" << build_cmd << "' for '"
-           << "'";
-        throw ss.str();
-    }
-    const auto exit_code = pclose(pipe);
+    auto exit_code = system(build_cmd.c_str());
     if (exit_code)
     {
         std::stringstream ss;
-        ss << "Build script '" << build_cmd << "' for '" << this
+        ss << "Build script '" << build_cmd << "' for '" << *this
            << "' failed with code: " << exit_code << std::endl;
         throw ss.str();
     }
@@ -71,24 +63,30 @@ void Client::run() const
         ss << run_cmd << "' failed to start." << std::endl;
         throw ss.str();
     }
-    std::cerr << "Client '" << this << "' started!" << std::endl;
+    std::cerr << "Client '" << *this << "' started!" << std::endl;
     // don't pclose here - the endpoints are starting :)
 }
 
 std::string Client::request(const std::string &msg) const
 {
-    zmqpp::context zmqpp_context;
+    const auto endpoint = "tcp://localhost:" + port;
+    // initialize the 0MQ context
+    zmqpp::context context;
+
+    // generate a push socket
+    zmqpp::socket_type type = zmqpp::socket_type::req;
+    zmqpp::socket socket(context, type);
+
+    // open the connection
+    socket.connect(endpoint);
+    zmqpp::message message;
+
+    message << msg;
+    socket.send(message);
     std::string ret;
-    zmqpp::message rcv_msg;
-    zmqpp::socket socket(zmqpp_context, zmqpp::socket_type::reply);
-
-    // send
-    socket.send(msg);
-
-    // receive
-    socket.receive(rcv_msg);
-    rcv_msg >> ret;
+    socket.receive(ret);
     return ret;
+        
 }
 
 std::ostream &operator<<(std::ostream &os, const Client &c)

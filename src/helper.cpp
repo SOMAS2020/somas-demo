@@ -2,6 +2,8 @@
 
 void kill_processes_on_tcp_port(const std::string &port)
 {
+    std::cerr << "SKIPPING tcp kill for " << port << std::endl;
+    /*
     const auto kill_port_cmd = "fuser -k " + port + "/tcp";
     std::cerr << "Killing processes on port '" << port << "'" << std::endl;
     auto pipe = popen(kill_port_cmd.c_str(), "r");
@@ -13,4 +15,5 @@ void kill_processes_on_tcp_port(const std::string &port)
         throw "'" + kill_port_cmd + "' failed with code: " + std::to_string(exit_code);
     
     std::cerr << "Killed processes on port '" << port << "'" << std::endl;
+    */
 }
