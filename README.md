@@ -1,3 +1,7 @@
+## What am I seeing?
+
+A `C++` "server" capable of sending requests to a Python and a C++ "client", all three in different processes.
+
 ## Setting up
 
 I haven't set up a Dockerfile. Just running on Ubuntu 20.04 on WSL2 for the time being.
